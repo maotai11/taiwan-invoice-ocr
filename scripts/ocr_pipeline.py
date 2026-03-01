@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 
+
 @dataclass
 class OcrLine:
     text: str
@@ -645,13 +646,14 @@ def main() -> int:
     evidence = build_evidence(paddle_fields, lines)
     match_score = min(1.0, sum(l.confidence for l in lines) / max(1, len(lines)))
 
-    sys.stdout.write(json.dumps({
+    out = json.dumps({
         "fields": paddle_fields,
         "evidence": evidence,
         "match_score": round(match_score, 4),
         "review": review,
         "cross_validations": cross_validations,
-    }, ensure_ascii=False))
+    }, ensure_ascii=False)
+    sys.stdout.buffer.write(out.encode("utf-8"))
     return 0
 
 
