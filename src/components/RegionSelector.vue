@@ -219,7 +219,7 @@ onUnmounted(() => {
           <div class="rs-legend">
             <div class="rs-legend-title">已學習區域</div>
             <div
-              v-for="(rect, fieldKey) in existingRegions"
+              v-for="(_, fieldKey) in existingRegions"
               :key="fieldKey"
               class="rs-legend-item"
             >
