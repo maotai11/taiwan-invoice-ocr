@@ -613,10 +613,20 @@ def main() -> int:
             paddle_fields[name_f] = memory[ubn]
             sys.stderr.write(f"[info] Memory hit: {ubn} -> {memory[ubn]}\n")
 
-    # 5. Qwen Vision — ALL fields (v3)
+    # 5. Qwen Vision — only when PaddleOCR confidence is below threshold
     qwen_fields: dict[str, Any] = {}
     if cfg.get("qwen", {}).get("enabled", False):
-        qwen_fields = run_qwen_vision_all_fields(str(image_path), cfg["qwen"], project_root)
+        preliminary_score = min(1.0, sum(l.confidence for l in lines) / max(1, len(lines)))
+        qwen_threshold = float(cfg.get("qwen", {}).get("threshold", 0.7))
+        if preliminary_score < qwen_threshold:
+            sys.stderr.write(
+                f"[info] PaddleOCR score {preliminary_score:.3f} < {qwen_threshold}, running Qwen...\n"
+            )
+            qwen_fields = run_qwen_vision_all_fields(str(image_path), cfg["qwen"], project_root)
+        else:
+            sys.stderr.write(
+                f"[info] Qwen skipped (PaddleOCR score {preliminary_score:.3f} >= {qwen_threshold})\n"
+            )
 
     # 6. Cross-validate numbers; Qwen fills missing; Qwen wins on name fields
     review = False
