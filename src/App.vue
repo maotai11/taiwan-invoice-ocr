@@ -246,7 +246,10 @@ onMounted(async () => {
               <td class="td-confidence">
                 <ConfidenceBar :score="row.score ?? 0" :show-pct="false" />
               </td>
-              <td>{{ row.issue_count }}</td>
+              <td>
+                {{ row.issue_count }}
+                <span v-if="row.cross_validations?.length" class="cv-badge" title="數值差異">⚠️{{ row.cross_validations.length }}</span>
+              </td>
               <td @dblclick.stop="startEdit(row, 'inv_no')">{{ row.fields.inv_no ?? "" }}</td>
               <td @dblclick.stop="startEdit(row, 'inv_date')">{{ row.fields.inv_date ?? "" }}</td>
               <td @dblclick.stop="startEdit(row, 'seller_ubn')">{{ row.fields.seller_ubn ?? "" }}</td>
@@ -287,6 +290,23 @@ onMounted(async () => {
         <!-- Confidence detail for selected row -->
         <div v-if="selectedRow" class="score-row">
           <ConfidenceBar :score="selectedRow.score ?? 0" label="整體信心" />
+        </div>
+
+        <!-- Cross-validation mismatches -->
+        <div v-if="selectedRow?.cross_validations?.length" class="mismatch-panel">
+          <div class="mismatch-title">⚠️ 數值差異（需人工確認）</div>
+          <table class="mismatch-table">
+            <thead>
+              <tr><th>欄位</th><th>PaddleOCR</th><th>Qwen-VL</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="cv in selectedRow.cross_validations" :key="cv.field">
+                <td class="cv-field">{{ cv.field }}</td>
+                <td class="cv-paddle">{{ cv.paddle_val }}</td>
+                <td class="cv-qwen">{{ cv.qwen_val }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <!-- Image with overlay -->
@@ -461,6 +481,51 @@ tr.review.selected td { background: #fff3cc; }
 }
 
 .score-row { flex-shrink: 0; }
+
+.mismatch-panel {
+  flex-shrink: 0;
+  margin: 6px 8px;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  background: #fffbeb;
+  overflow: hidden;
+}
+.mismatch-title {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-bottom: 1px solid #fde68a;
+}
+.mismatch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.mismatch-table th {
+  padding: 3px 8px;
+  text-align: left;
+  color: #78350f;
+  font-weight: 600;
+  background: #fef9c3;
+}
+.mismatch-table td { padding: 3px 8px; border-top: 1px solid #fde68a; }
+.cv-field { font-family: monospace; color: #374151; }
+.cv-paddle { color: #1d4ed8; font-weight: 600; }
+.cv-qwen   { color: #b45309; font-weight: 600; }
+
+.cv-badge {
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 0 3px;
+  vertical-align: middle;
+}
 
 .image-wrap {
   position: relative;

@@ -9,6 +9,13 @@ use uuid::Uuid;
 pub type FieldName = String;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossValidation {
+    pub field: String,
+    pub paddle_val: String,
+    pub qwen_val: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RowRecord {
     pub id: Uuid,
     pub source: Source,
@@ -20,6 +27,7 @@ pub struct RowRecord {
     pub fields: InvoiceFields,
     pub evidence: HashMap<FieldName, Evidence>,
     pub issues: Vec<Issue>,
+    pub cross_validations: Vec<CrossValidation>,
     pub edits: Vec<EditRecord>,
     pub image_path: PathBuf,
     pub thumb_path: PathBuf,
@@ -209,6 +217,7 @@ pub struct RowRecordSummary {
     pub score: f32,
     pub issue_count: u32,
     pub fields: InvoiceFieldsSummary,
+    pub cross_validations: Vec<CrossValidation>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -271,6 +280,7 @@ impl RowRecord {
                 tax_type: self.fields.tax_type,
                 invoice_type: self.fields.invoice_type.clone(),
             },
+            cross_validations: self.cross_validations.clone(),
         }
     }
 }

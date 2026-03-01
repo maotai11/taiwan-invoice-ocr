@@ -6,7 +6,14 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::error::AppError;
-use crate::models::{BoundingBox, Evidence, FieldName, InvoiceFields};
+use crate::models::{BoundingBox, CrossValidation, Evidence, FieldName, InvoiceFields};
+
+#[derive(Debug, Deserialize)]
+struct PythonCrossValidation {
+    field: String,
+    paddle_val: String,
+    qwen_val: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct PythonOcrOutput {
@@ -15,6 +22,8 @@ struct PythonOcrOutput {
     match_score: f32,
     #[serde(default)]
     review: bool,
+    #[serde(default)]
+    cross_validations: Vec<PythonCrossValidation>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +58,7 @@ pub struct OcrResult {
     pub evidence: std::collections::HashMap<FieldName, Evidence>,
     pub match_score: f32,
     pub review: bool,
+    pub cross_validations: Vec<CrossValidation>,
 }
 
 /// Resolve the project/resource root directory at runtime.
@@ -185,6 +195,15 @@ pub fn run_ocr_pipeline(project_root: &Path, input: &Path) -> Result<OcrResult, 
             .collect(),
         match_score: parsed.match_score,
         review: parsed.review,
+        cross_validations: parsed
+            .cross_validations
+            .into_iter()
+            .map(|c| CrossValidation {
+                field: c.field,
+                paddle_val: c.paddle_val,
+                qwen_val: c.qwen_val,
+            })
+            .collect(),
     })
 }
 

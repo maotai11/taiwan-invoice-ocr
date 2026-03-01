@@ -353,24 +353,27 @@ NUMBER_FIELDS = ["inv_no", "seller_ubn", "buyer_ubn", "net_amount", "tax", "tota
 def cross_validate_numbers(
     paddle_fields: dict[str, Any],
     qwen_fields: dict[str, Any],
-) -> tuple[dict[str, Any], bool]:
+) -> tuple[dict[str, Any], bool, list[dict]]:
     """
     PaddleOCR is primary (reliable). If Qwen disagrees -> review=True.
     If PaddleOCR is missing a field -> fill from Qwen.
+    Returns (merged_fields, review, cross_validations_list).
     """
     merged = dict(paddle_fields)
     review = False
+    cross_validations: list[dict] = []
     for field in NUMBER_FIELDS:
         p_val = paddle_fields.get(field)
         q_val = qwen_fields.get(field)
         if p_val and q_val and p_val != q_val:
             review = True
+            cross_validations.append({"field": field, "paddle_val": p_val, "qwen_val": q_val})
             sys.stderr.write(
                 f"[cross-val] {field}: paddle={p_val!r}  qwen={q_val!r}  -> MISMATCH\n"
             )
         elif not p_val and q_val:
             merged[field] = q_val
-    return merged, review
+    return merged, review, cross_validations
 
 
 # ---------------------------------------------------------------------------
@@ -592,8 +595,9 @@ def main() -> int:
 
     # 6. Cross-validate numbers; Qwen fills missing; Qwen wins on name fields
     review = False
+    cross_validations: list[dict] = []
     if qwen_fields:
-        paddle_fields, review = cross_validate_numbers(paddle_fields, qwen_fields)
+        paddle_fields, review, cross_validations = cross_validate_numbers(paddle_fields, qwen_fields)
         for nf in ("seller_name", "buyer_name"):
             if qwen_fields.get(nf) and not paddle_fields.get(nf):
                 paddle_fields[nf] = qwen_fields[nf]
@@ -611,6 +615,7 @@ def main() -> int:
         "evidence": evidence,
         "match_score": round(match_score, 4),
         "review": review,
+        "cross_validations": cross_validations,
     }, ensure_ascii=False))
     return 0
 

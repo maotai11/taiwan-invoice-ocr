@@ -70,6 +70,7 @@ pub async fn import_files(state: State<'_, AppState>, paths: Vec<PathBuf>) -> Re
             fields: InvoiceFields::default(),
             evidence: Default::default(),
             issues: vec![],
+            cross_validations: vec![],
             edits: vec![],
             image_path: path.clone(),
             thumb_path: path.clone(),
@@ -86,6 +87,7 @@ pub async fn import_files(state: State<'_, AppState>, paths: Vec<PathBuf>) -> Re
                 row.fields = ocr.fields;
                 row.evidence = ocr.evidence;
                 row.match_score = ocr.match_score;
+                row.cross_validations = ocr.cross_validations;
                 if ocr.review {
                     row.status = RowStatus::Review;
                 }
@@ -149,6 +151,7 @@ pub async fn run_ocr_for_row(state: State<'_, AppState>, row_id: Uuid) -> Result
     row.fields = ocr.fields;
     row.evidence = ocr.evidence;
     row.match_score = ocr.match_score;
+    row.cross_validations = ocr.cross_validations;
     if ocr.review {
         row.status = RowStatus::Review;
     }

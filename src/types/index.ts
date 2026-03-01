@@ -1,5 +1,11 @@
 export type RowStatus = "OK" | "Review" | "Error" | "Excluded";
 
+export interface CrossValidation {
+  field: string;
+  paddle_val: string;
+  qwen_val: string;
+}
+
 export interface InvoiceFieldsSummary {
   inv_no?: string;
   inv_date?: string;
@@ -23,6 +29,7 @@ export interface RowRecordSummary {
   score: number;
   issue_count: number;
   fields: InvoiceFieldsSummary;
+  cross_validations: CrossValidation[];
 }
 
 export interface ImportResult {
