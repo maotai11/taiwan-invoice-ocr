@@ -21,7 +21,7 @@ src-tauri/gen/
 
 # Large model files (distribute separately)
 models/
-ocr_models/
+
 engine/
 
 # User data & test outputs
