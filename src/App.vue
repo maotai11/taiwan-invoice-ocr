@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   deleteTemplateRegion,
@@ -28,6 +28,8 @@ const selectedRowId = ref<string>("");
 const editing = ref<{ rowId: string; field: string; value: string; ubn?: string } | null>(null);
 const autoLearn = ref(false);
 const exportMsg = ref("");
+const statusFilter = ref<string>("all");
+const lightboxSrc = ref<string>("");
 
 // Template state
 const showRegionSelector = ref(false);
@@ -47,6 +49,19 @@ const isNameField = computed(() =>
   editing.value?.field === "seller_name" || editing.value?.field === "buyer_name",
 );
 const currentTemplate = computed(() => templates.value[selectedInvoiceType.value] ?? null);
+
+const stats = computed(() => ({
+  all:      rows.value.length,
+  OK:       rows.value.filter((r) => r.status === "OK").length,
+  Review:   rows.value.filter((r) => r.status === "Review").length,
+  Error:    rows.value.filter((r) => r.status === "Error").length,
+  Excluded: rows.value.filter((r) => r.status === "Excluded").length,
+}));
+
+const filteredRows = computed(() => {
+  if (statusFilter.value === "all") return rows.value;
+  return rows.value.filter((r) => r.status === statusFilter.value);
+});
 
 // Field colors (same order as RegionSelector FIELDS)
 const FIELD_KEYS = ["inv_no", "inv_date", "seller_ubn", "seller_name", "buyer_ubn", "buyer_name", "net_amount", "tax", "total"];
@@ -108,6 +123,32 @@ async function doExport() {
   exportMsg.value = "已匯出 ✓";
   setTimeout(() => (exportMsg.value = ""), 3000);
 }
+
+// ---------------------------------------------------------------------------
+// Keyboard navigation
+// ---------------------------------------------------------------------------
+function handleKeydown(e: KeyboardEvent) {
+  if (editing.value || lightboxSrc.value) return;
+  const list = filteredRows.value;
+  const idx = list.findIndex((r) => r.id === selectedRowId.value);
+  if (e.key === "ArrowDown" || e.key === "j") {
+    e.preventDefault();
+    if (idx < list.length - 1) selectedRowId.value = list[idx + 1].id;
+  } else if (e.key === "ArrowUp" || e.key === "k") {
+    e.preventDefault();
+    if (idx > 0) selectedRowId.value = list[idx - 1].id;
+  }
+}
+
+onMounted(async () => {
+  await refreshRows();
+  await refreshTemplates();
+  window.addEventListener("keydown", handleKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleKeydown);
+});
 
 // ---------------------------------------------------------------------------
 // Edit dialog
@@ -192,11 +233,6 @@ function statusClass(status: string): string {
     { OK: "status-ok", Review: "status-review", Error: "status-error", Excluded: "status-excluded" }[status] ?? ""
   );
 }
-
-onMounted(async () => {
-  await refreshRows();
-  await refreshTemplates();
-});
 </script>
 
 <template>
@@ -214,6 +250,20 @@ onMounted(async () => {
       <button class="btn export-btn" @click="doExport">匯出 Excel</button>
     </header>
 
+    <!-- ------------------------------------------------------------------ Stats bar -->
+    <div class="stats-bar">
+      <button
+        v-for="[key, label] in [['all','全部'],['OK','OK'],['Review','待確認'],['Error','錯誤'],['Excluded','已排除']] as [string,string][]"
+        :key="key"
+        class="stat-chip"
+        :class="[`chip-${key}`, { active: statusFilter === key }]"
+        @click="statusFilter = key"
+      >
+        {{ label }}
+        <span class="stat-num">{{ key === 'all' ? stats.all : stats[key as keyof typeof stats] }}</span>
+      </button>
+    </div>
+
     <!-- ------------------------------------------------------------------ Content -->
     <main class="content">
       <!-- Table pane -->
@@ -225,6 +275,7 @@ onMounted(async () => {
               <th>來源</th>
               <th>信心</th>
               <th>問題</th>
+              <th>類型</th>
               <th>發票號碼</th>
               <th>日期</th>
               <th>賣方統編</th>
@@ -236,7 +287,7 @@ onMounted(async () => {
           </thead>
           <tbody>
             <tr
-              v-for="row in rows"
+              v-for="row in filteredRows"
               :key="row.id"
               :class="{ selected: row.id === selectedRowId, review: row.status === 'Review' }"
               @click="selectedRowId = row.id"
@@ -249,6 +300,9 @@ onMounted(async () => {
               <td>
                 {{ row.issue_count }}
                 <span v-if="row.cross_validations?.length" class="cv-badge" title="數值差異">⚠️{{ row.cross_validations.length }}</span>
+              </td>
+              <td>
+                <span v-if="row.fields.invoice_type" class="type-chip">{{ row.fields.invoice_type }}</span>
               </td>
               <td @dblclick.stop="startEdit(row, 'inv_no')">{{ row.fields.inv_no ?? "" }}</td>
               <td @dblclick.stop="startEdit(row, 'inv_date')">{{ row.fields.inv_date ?? "" }}</td>
@@ -285,6 +339,9 @@ onMounted(async () => {
           >
             範本 {{ Object.keys(currentTemplate.regions).length }} 區域
           </span>
+
+          <!-- Keyboard hint -->
+          <span class="kbd-hint">↑↓ 換列</span>
         </div>
 
         <!-- Confidence detail for selected row -->
@@ -309,8 +366,8 @@ onMounted(async () => {
           </table>
         </div>
 
-        <!-- Image with overlay -->
-        <div v-if="selectedRow" class="image-wrap">
+        <!-- Image with overlay — click to open lightbox -->
+        <div v-if="selectedRow" class="image-wrap" @click="lightboxSrc = selectedRow!.thumb_url">
           <img :src="selectedRow.thumb_url" alt="thumb" class="preview-image" />
           <div
             v-for="(rect, fieldKey) in currentTemplate?.regions ?? {}"
@@ -327,6 +384,7 @@ onMounted(async () => {
           >
             <span class="region-label" :style="{ color: fieldColor(fieldKey) }">{{ fieldKey }}</span>
           </div>
+          <div class="zoom-hint">點擊放大</div>
         </div>
         <div v-else class="empty">尚未選取列</div>
       </section>
@@ -363,6 +421,12 @@ onMounted(async () => {
           <button class="btn" @click="editing = null">取消</button>
         </div>
       </div>
+    </div>
+
+    <!-- ------------------------------------------------------------------ Lightbox -->
+    <div v-if="lightboxSrc" class="lightbox" @click="lightboxSrc = ''">
+      <img :src="lightboxSrc" class="lightbox-img" @click.stop />
+      <button class="lightbox-close" @click="lightboxSrc = ''">✕</button>
     </div>
 
     <!-- ------------------------------------------------------------------ Region Selector -->
@@ -424,6 +488,51 @@ onMounted(async () => {
 .export-msg { font-size: 13px; color: #1f7a2e; margin-right: 8px; }
 .spacer { flex: 1; }
 
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e4e8ef;
+}
+
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid #d1d9e4;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  color: #374151;
+  transition: all 0.15s;
+}
+.stat-chip:hover { border-color: #94a3b8; }
+.stat-chip.active { font-weight: 700; }
+
+.stat-num {
+  font-size: 11px;
+  font-weight: 700;
+  background: #e9ecf0;
+  border-radius: 999px;
+  padding: 0 5px;
+  line-height: 1.6;
+}
+
+.chip-all.active    { background: #f0f4fa; border-color: #7090b8; color: #1e3a5f; }
+.chip-OK.active     { background: #d9f3dc; border-color: #5aab68; color: #1f5a28; }
+.chip-Review.active { background: #fff2c6; border-color: #e0b820; color: #7b5a00; }
+.chip-Error.active  { background: #ffd7d7; border-color: #d05050; color: #a52020; }
+.chip-Excluded.active { background: #ebedf1; border-color: #9099aa; color: #3d4452; }
+
+.chip-OK .stat-num     { background: #b4e8bc; }
+.chip-Review .stat-num { background: #fde68a; }
+.chip-Error .stat-num  { background: #fca5a5; }
+
 /* Layout */
 .content {
   flex: 1;
@@ -449,6 +558,16 @@ tr.review.selected td { background: #fff3cc; }
 .status-review   { background: #fff2c6; color: #7b5a00; }
 .status-error    { background: #ffd7d7; color: #a52020; }
 .status-excluded { background: #ebedf1; color: #6d7480; }
+
+.type-chip {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f0ebff;
+  color: #5b21b6;
+  border: 1px solid #ddd6fe;
+  white-space: nowrap;
+}
 
 /* Viewer */
 .viewer-pane { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -478,6 +597,12 @@ tr.review.selected td { background: #fff3cc; }
   border-radius: 999px;
   padding: 2px 8px;
   border: 1px solid #ddd6fe;
+}
+
+.kbd-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-left: auto;
 }
 
 .score-row { flex-shrink: 0; }
@@ -531,7 +656,23 @@ tr.review.selected td { background: #fff3cc; }
   position: relative;
   flex: 1;
   min-height: 0;
+  cursor: zoom-in;
 }
+
+.zoom-hint {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0,0,0,0.45);
+  border-radius: 4px;
+  padding: 2px 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.image-wrap:hover .zoom-hint { opacity: 1; }
 
 .preview-image {
   width: 100%;
@@ -559,6 +700,46 @@ tr.review.selected td { background: #fff3cc; }
 }
 
 .empty { color: #6b7280; }
+
+/* Lightbox */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  cursor: zoom-out;
+}
+
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  cursor: default;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.lightbox-close:hover { background: rgba(255,255,255,0.3); }
 
 /* Edit dialog */
 .editor {
