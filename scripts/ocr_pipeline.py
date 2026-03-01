@@ -278,14 +278,14 @@ def run_qwen_vision_all_fields(
 
     try:
         from llama_cpp import Llama
-        from llama_cpp.llama_chat_format import Qwen2VLChatHandler
+        from llama_cpp.llama_chat_format import Qwen25VLChatHandler
 
         ext = Path(image_path).suffix.lower().lstrip(".")
         mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(ext, "jpeg")
         with open(image_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
 
-        chat_handler = Qwen2VLChatHandler(clip_model_path=str(mmproj_path))
+        chat_handler = Qwen25VLChatHandler(clip_model_path=str(mmproj_path))
         llm = Llama(
             model_path=str(model_path),
             chat_handler=chat_handler,
