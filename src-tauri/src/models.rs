@@ -81,6 +81,10 @@ pub struct InvoiceFields {
     pub tax_type: Option<TaxType>,
     pub random_code: Option<String>,
     pub qr_verified: bool,
+    /// Classified invoice type, e.g. "三聯式" / "電子發票"
+    pub invoice_type: Option<String>,
+    /// Classifier confidence (0.0–1.0)
+    pub type_confidence: f32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -219,6 +223,7 @@ pub struct InvoiceFieldsSummary {
     pub tax: Option<Decimal>,
     pub total: Option<Decimal>,
     pub tax_type: Option<TaxType>,
+    pub invoice_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +269,7 @@ impl RowRecord {
                 tax: self.fields.tax,
                 total: self.fields.total,
                 tax_type: self.fields.tax_type,
+                invoice_type: self.fields.invoice_type.clone(),
             },
         }
     }

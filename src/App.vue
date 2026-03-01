@@ -122,6 +122,13 @@ function startEdit(row: RowRecordSummary, field: string) {
   fuzzySuggestions.value = [];
 }
 
+// Auto-sync invoice type picker with selected row's classified type
+watch(selectedRow, (row) => {
+  if (row?.fields.invoice_type) {
+    selectedInvoiceType.value = row.fields.invoice_type;
+  }
+});
+
 // Debounced fuzzy search while user types in name field
 watch(
   () => editing.value?.value,

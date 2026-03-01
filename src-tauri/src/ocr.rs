@@ -13,6 +13,8 @@ struct PythonOcrOutput {
     fields: PythonFields,
     evidence: std::collections::HashMap<FieldName, PythonEvidence>,
     match_score: f32,
+    #[serde(default)]
+    review: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +31,9 @@ struct PythonFields {
     tax_type: Option<String>,
     random_code: Option<String>,
     qr_verified: Option<bool>,
+    invoice_type: Option<String>,
+    #[serde(default)]
+    type_confidence: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +48,7 @@ pub struct OcrResult {
     pub fields: InvoiceFields,
     pub evidence: std::collections::HashMap<FieldName, Evidence>,
     pub match_score: f32,
+    pub review: bool,
 }
 
 /// Resolve the project/resource root directory at runtime.
@@ -178,6 +184,7 @@ pub fn run_ocr_pipeline(project_root: &Path, input: &Path) -> Result<OcrResult, 
             })
             .collect(),
         match_score: parsed.match_score,
+        review: parsed.review,
     })
 }
 
@@ -197,6 +204,8 @@ fn map_fields(raw: PythonFields) -> InvoiceFields {
         tax_type: raw.tax_type.and_then(parse_tax_type),
         random_code: raw.random_code,
         qr_verified: raw.qr_verified.unwrap_or(false),
+        invoice_type: raw.invoice_type,
+        type_confidence: raw.type_confidence,
     }
 }
 

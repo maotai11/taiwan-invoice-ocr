@@ -86,6 +86,9 @@ pub async fn import_files(state: State<'_, AppState>, paths: Vec<PathBuf>) -> Re
                 row.fields = ocr.fields;
                 row.evidence = ocr.evidence;
                 row.match_score = ocr.match_score;
+                if ocr.review {
+                    row.status = RowStatus::Review;
+                }
                 row.processing_state = ProcessingState::Done;
             }
             Err(err) => {
@@ -146,6 +149,9 @@ pub async fn run_ocr_for_row(state: State<'_, AppState>, row_id: Uuid) -> Result
     row.fields = ocr.fields;
     row.evidence = ocr.evidence;
     row.match_score = ocr.match_score;
+    if ocr.review {
+        row.status = RowStatus::Review;
+    }
     row.issues = validate_row(row);
     row.processing_state = ProcessingState::Done;
     row.status = if row.issues.iter().any(|i| i.severity == crate::models::Severity::Error) {

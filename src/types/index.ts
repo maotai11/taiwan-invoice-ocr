@@ -11,6 +11,7 @@ export interface InvoiceFieldsSummary {
   tax?: string;
   total?: string;
   tax_type?: string;
+  invoice_type?: string;
 }
 
 export interface RowRecordSummary {

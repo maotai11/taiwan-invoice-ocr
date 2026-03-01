@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 """
-Taiwan Invoice OCR Pipeline  v2.0
+Taiwan Invoice OCR Pipeline  v3.0
 ----------------------------------
 Pipeline:
-  1. PaddleOCR  → text lines (all fields, reliable on numbers)
-  2. UBN memory → fill known company names instantly
-  3. Qwen2.5-VL → multimodal: extract names from image (only if memory miss)
-  4. Validation → UBN checksum, amount sanity
+  1. PaddleOCR     -> text lines (reliable for numbers)
+  2. Classifier    -> detect invoice type (keyword weights)
+  3. UBN memory    -> fill known company names instantly
+  4. Qwen2.5-VL   -> extract ALL fields from image (full structured JSON)
+  5. Cross-validate-> compare Qwen vs PaddleOCR on number fields
+                     mismatch -> review=True, keep PaddleOCR value (safer)
+  6. Output        -> fields + evidence + invoice_type + review flag
 """
 import argparse
 import base64
@@ -41,6 +44,18 @@ def to_bbox(points: list[list[float]]) -> list[float]:
 def resolve_path(raw: str, root: Path) -> Path:
     p = Path(raw)
     return p if p.is_absolute() else root / p
+
+
+def normalise_amount(v: str | None) -> str | None:
+    """Remove commas and trailing .0 from amount strings."""
+    if not v:
+        return None
+    s = str(v).replace(",", "").strip()
+    try:
+        f = float(s)
+        return str(int(f)) if f == int(f) else s
+    except ValueError:
+        return s if s else None
 
 
 def validate_ubn(ubn: str) -> bool:
@@ -127,27 +142,39 @@ def load_ubn_memory(project_root: Path) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Qwen 2.5-VL Vision — names only (no numbers, avoids hallucination)
+# Qwen 2.5-VL Vision — ALL fields (v3.0)
 # ---------------------------------------------------------------------------
 
-def run_qwen_vision_names(
+# Full structured JSON prompt (all invoice fields)
+_QWEN_PROMPT_PARTS = [
+    "\u8acb\u8fa8\u8b58\u9019\u5f35\u53f0\u7063\u767c\u7968\uff0c\u4ee5 JSON \u683c\u5f0f\u56de\u50b3\u4ee5\u4e0b\u6b04\u4f4d\uff0c\u672a\u627e\u5230\u7684\u6b04\u4f4d\u586b null\uff1a\n",
+    "{\"inv_no\":\"\u767c\u7968\u865f\u78bc(2\u5b57\u6bcd+8\u6578\u5b57\u5982AB12345678)\",\"inv_date\":\"\u65e5\u671f(\u6c11\u570b\u5e74/\u6708/\u65e5\u5982113/05/20)\",",
+    "\"seller_name\":\"\u8ce3\u65b9\u516c\u53f8\u540d\u7a31\",\"seller_ubn\":\"\u8ce3\u65b9\u7d71\u4e00\u7de8\u865f(8\u4f4d\u6578\u5b57)\",",
+    "\"buyer_name\":\"\u8cb7\u65b9\u516c\u53f8\u540d\u7a31(\u500b\u4eba\u8cb7\u65b9\u586b null)\",\"buyer_ubn\":\"\u8cb7\u65b9\u7d71\u4e00\u7de8\u865f(8\u4f4d\u6578\u5b57\u6216 null)\",",
+    "\"net_amount\":\"\u92b7\u552e\u984d(\u7d14\u6578\u5b57)\",\"tax\":\"\u7a05\u984d(\u7d14\u6578\u5b57)\",\"total\":\"\u7e3d\u8a08\u91d1\u984d(\u7d14\u6578\u5b57)\"}\n",
+    "\u53ea\u56de\u50b3 JSON\uff0c\u4e0d\u8981\u5176\u4ed6\u8aaa\u660e\u3002",
+]
+QWEN_FULL_PROMPT = "".join(_QWEN_PROMPT_PARTS)
+
+
+def run_qwen_vision_all_fields(
     image_path: str,
     cfg: dict[str, Any],
     project_root: Path,
-) -> tuple[str | None, str | None]:
-    """Extract seller_name and buyer_name via Qwen2.5-VL multimodal."""
+) -> dict[str, Any]:
+    """Extract ALL invoice fields via Qwen2.5-VL multimodal. Returns partial dict on failure."""
     if not cfg.get("enabled", False):
-        return None, None
+        return {}
 
     model_path = resolve_path(cfg.get("model_path", ""), project_root)
     mmproj_path = resolve_path(cfg.get("mmproj_path", ""), project_root)
 
     if not model_path.exists():
         sys.stderr.write(f"[warn] Qwen model not found: {model_path}\n")
-        return None, None
+        return {}
     if not mmproj_path.exists():
         sys.stderr.write(f"[warn] Qwen mmproj not found: {mmproj_path}\n")
-        return None, None
+        return {}
 
     try:
         from llama_cpp import Llama
@@ -162,43 +189,88 @@ def run_qwen_vision_names(
         llm = Llama(
             model_path=str(model_path),
             chat_handler=chat_handler,
-            n_ctx=int(cfg.get("n_ctx", 2048)),
+            n_ctx=int(cfg.get("n_ctx", 4096)),
             n_threads=int(cfg.get("n_threads", 6)),
             verbose=False,
         )
 
-        prompt = (
-            "這是一張台灣電子發票或統一發票。"
-            "請從圖片中找出賣方（銷售人）公司名稱和買方（購買人）公司名稱。"
-            '只輸出 JSON，不要其他文字：{"seller_name": "名稱或null", "buyer_name": "名稱或null"}'
-        )
         result = llm.create_chat_completion(
             messages=[{
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{img_b64}"}},
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": QWEN_FULL_PROMPT},
                 ],
             }],
             temperature=0.1,
-            max_tokens=80,
+            max_tokens=int(cfg.get("max_tokens", 512)),
         )
         content = result["choices"][0]["message"]["content"]
         m = re.search(r"\{.*\}", content, re.DOTALL)
-        if m:
-            d = json.loads(m.group(0))
-            seller = d.get("seller_name") or None
-            buyer = d.get("buyer_name") or None
-            # Reject if looks like hallucination (too short or generic)
-            if seller and len(seller) < 2:
-                seller = None
-            if buyer and len(buyer) < 2:
-                buyer = None
-            return seller, buyer
+        if not m:
+            sys.stderr.write(f"[warn] Qwen no JSON: {content[:120]}\n")
+            return {}
+
+        raw: dict = json.loads(m.group(0))
+
+        def cs(v: Any) -> str | None:
+            if not v or str(v).lower() in ("null", "none", ""):
+                return None
+            return str(v).strip() or None
+
+        def cn(v: Any) -> str | None:
+            s = cs(v)
+            return s if s and len(s) >= 2 else None
+
+        def cu(v: Any) -> str | None:
+            s = re.sub(r"\D", "", str(v or ""))
+            return s if validate_ubn(s) else None
+
+        return {
+            "inv_no": cs(raw.get("inv_no")),
+            "inv_date": parse_date(str(raw.get("inv_date") or "")),
+            "seller_name": cn(raw.get("seller_name")),
+            "seller_ubn": cu(raw.get("seller_ubn")),
+            "buyer_name": cn(raw.get("buyer_name")),
+            "buyer_ubn": cu(raw.get("buyer_ubn")),
+            "net_amount": normalise_amount(cs(raw.get("net_amount"))),
+            "tax": normalise_amount(cs(raw.get("tax"))),
+            "total": normalise_amount(cs(raw.get("total"))),
+        }
+
     except Exception as e:
         sys.stderr.write(f"[warn] Qwen Vision failed: {e}\n")
+        return {}
 
-    return None, None
+
+# ---------------------------------------------------------------------------
+# Cross-validation (Qwen vs PaddleOCR on number fields)
+# ---------------------------------------------------------------------------
+
+NUMBER_FIELDS = ["inv_no", "seller_ubn", "buyer_ubn", "net_amount", "tax", "total"]
+
+
+def cross_validate_numbers(
+    paddle_fields: dict[str, Any],
+    qwen_fields: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """
+    PaddleOCR is primary (reliable). If Qwen disagrees -> review=True.
+    If PaddleOCR is missing a field -> fill from Qwen.
+    """
+    merged = dict(paddle_fields)
+    review = False
+    for field in NUMBER_FIELDS:
+        p_val = paddle_fields.get(field)
+        q_val = qwen_fields.get(field)
+        if p_val and q_val and p_val != q_val:
+            review = True
+            sys.stderr.write(
+                f"[cross-val] {field}: paddle={p_val!r}  qwen={q_val!r}  -> MISMATCH\n"
+            )
+        elif not p_val and q_val:
+            merged[field] = q_val
+    return merged, review
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +338,9 @@ def extract_fields(lines: list[OcrLine]) -> dict[str, Any]:
         "seller_name": seller_name,
         "buyer_ubn": buyer_ubn,
         "buyer_name": buyer_name,
-        "net_amount": net_amount,
-        "tax": tax,
-        "total": total,
+        "net_amount": normalise_amount(net_amount),
+        "tax": normalise_amount(tax),
+        "total": normalise_amount(total),
         "tax_type": tax_type,
         "random_code": random_code,
         "qr_verified": False,
@@ -366,43 +438,66 @@ def main() -> int:
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
-    project_root = Path(args.project_root).resolve() if args.project_root else Path(__file__).resolve().parent.parent
+    project_root = (
+        Path(args.project_root).resolve() if args.project_root
+        else Path(__file__).resolve().parent.parent
+    )
 
     # 1. PaddleOCR
     lines = run_paddle_ocr(str(image_path))
     if not lines:
         raise RuntimeError("PaddleOCR produced no text lines.")
+    full_text = "\n".join(l.text for l in lines)
 
-    # 2. Extract fields (PaddleOCR text — reliable for numbers/UBN/inv_no)
-    fields = extract_fields(lines)
+    # 2. Classify invoice type
+    invoice_type = "\u672a\u77e5"
+    type_confidence = 0.0
+    kw_path = project_root / "config" / "keyword_weights.json"
+    if kw_path.exists():
+        try:
+            from invoice_classifier import classify_invoice
+            invoice_type, type_confidence = classify_invoice(full_text, kw_path)
+            sys.stderr.write(f"[info] Invoice type: {invoice_type} ({type_confidence:.2f})\n")
+        except Exception as e:
+            sys.stderr.write(f"[warn] Classifier failed: {e}\n")
 
-    # 3. UBN memory — fill known company names instantly (no AI needed)
+    # 3. Extract fields (PaddleOCR text — reliable for numbers/UBN/inv_no)
+    paddle_fields = extract_fields(lines)
+
+    # 4. UBN memory — fill known company names instantly
     memory = load_ubn_memory(project_root)
-    if fields.get("seller_ubn") and fields["seller_ubn"] in memory:
-        fields["seller_name"] = memory[fields["seller_ubn"]]
-        sys.stderr.write(f"[info] Memory hit: {fields['seller_ubn']} → {fields['seller_name']}\n")
-    if fields.get("buyer_ubn") and fields["buyer_ubn"] in memory:
-        fields["buyer_name"] = memory[fields["buyer_ubn"]]
-        sys.stderr.write(f"[info] Memory hit: {fields['buyer_ubn']} → {fields['buyer_name']}\n")
+    for ubn_f, name_f in [("seller_ubn", "seller_name"), ("buyer_ubn", "buyer_name")]:
+        ubn = paddle_fields.get(ubn_f)
+        if ubn and ubn in memory:
+            paddle_fields[name_f] = memory[ubn]
+            sys.stderr.write(f"[info] Memory hit: {ubn} -> {memory[ubn]}\n")
 
-    # 4. Qwen Vision — only for names still missing (avoids hallucination on numbers)
-    needs_seller = not fields.get("seller_name")
-    needs_buyer  = not fields.get("buyer_name")
-    if (needs_seller or needs_buyer) and cfg.get("qwen", {}).get("enabled", False):
-        vis_seller, vis_buyer = run_qwen_vision_names(str(image_path), cfg["qwen"], project_root)
-        if needs_seller and vis_seller:
-            fields["seller_name"] = vis_seller
-        if needs_buyer and vis_buyer:
-            fields["buyer_name"] = vis_buyer
+    # 5. Qwen Vision — ALL fields (v3)
+    qwen_fields: dict[str, Any] = {}
+    if cfg.get("qwen", {}).get("enabled", False):
+        qwen_fields = run_qwen_vision_all_fields(str(image_path), cfg["qwen"], project_root)
 
-    # 5. Evidence + score
-    evidence = build_evidence(fields, lines)
+    # 6. Cross-validate numbers; Qwen fills missing; Qwen wins on name fields
+    review = False
+    if qwen_fields:
+        paddle_fields, review = cross_validate_numbers(paddle_fields, qwen_fields)
+        for nf in ("seller_name", "buyer_name"):
+            if qwen_fields.get(nf) and not paddle_fields.get(nf):
+                paddle_fields[nf] = qwen_fields[nf]
+
+    # 7. Annotate with invoice type
+    paddle_fields["invoice_type"] = invoice_type
+    paddle_fields["type_confidence"] = type_confidence
+
+    # 8. Evidence + score
+    evidence = build_evidence(paddle_fields, lines)
     match_score = min(1.0, sum(l.confidence for l in lines) / max(1, len(lines)))
 
     sys.stdout.write(json.dumps({
-        "fields": fields,
+        "fields": paddle_fields,
         "evidence": evidence,
         "match_score": round(match_score, 4),
+        "review": review,
     }, ensure_ascii=False))
     return 0
 
