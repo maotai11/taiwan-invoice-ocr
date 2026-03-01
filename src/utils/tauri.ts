@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ImportResult, RowRecordSummary } from "../types";
+import type { ImportResult, RegionRect, RowRecordSummary, TemplateMap } from "../types";
 
 export async function importFiles(paths: string[]): Promise<ImportResult> {
   return invoke<ImportResult>("import_files", { paths });
@@ -40,4 +40,20 @@ export async function exportExcel(outputPath: string, includeStatuses: string[])
 
 export async function saveMemoryEntry(ubn: string, name: string): Promise<void> {
   return invoke("save_memory_entry", { ubn, name });
+}
+
+export async function saveTemplateRegion(
+  invoiceType: string,
+  field: string,
+  region: RegionRect,
+): Promise<void> {
+  return invoke("save_template_region", { invoiceType, field, region });
+}
+
+export async function getTemplates(): Promise<TemplateMap> {
+  return invoke<TemplateMap>("get_templates");
+}
+
+export async function deleteTemplateRegion(invoiceType: string, field: string): Promise<void> {
+  return invoke("delete_template_region", { invoiceType, field });
 }

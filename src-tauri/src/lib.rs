@@ -4,6 +4,7 @@ mod export;
 mod models;
 mod ocr;
 mod state;
+mod template;
 mod validation;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,7 +23,10 @@ pub fn run() {
             commands::rerun_extraction,
             commands::export_excel_command,
             commands::run_ocr_for_row,
-            commands::save_memory_entry
+            commands::save_memory_entry,
+            template::save_template_region,
+            template::get_templates,
+            template::delete_template_region
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -29,3 +29,17 @@ export interface ImportResult {
   total_files: number;
   total_pages: number;
 }
+
+export interface RegionRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface InvoiceTemplate {
+  version: number;
+  regions: Record<string, RegionRect>;
+}
+
+export type TemplateMap = Record<string, InvoiceTemplate>;
