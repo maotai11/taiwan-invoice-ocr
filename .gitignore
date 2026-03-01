@@ -39,3 +39,7 @@ ocr_pipeline/
 ocr_pipeline_dist/
 ocr_pipeline_build_tmp/
 portable/
+dist_portable/
+TaiwanInvoiceOCR_portable.zip
+scripts/ocr_pipeline.spec
+nul
