@@ -33,3 +33,9 @@ scripts/sample_invoice.*
 # Built installers (use GitHub Releases)
 *.exe
 *.msi
+
+# PyInstaller output & portable package
+ocr_pipeline/
+ocr_pipeline_dist/
+ocr_pipeline_build_tmp/
+portable/

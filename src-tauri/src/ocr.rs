@@ -99,13 +99,6 @@ fn find_python() -> String {
 }
 
 pub fn run_ocr_pipeline(project_root: &Path, input: &Path) -> Result<OcrResult, AppError> {
-    let script = project_root.join("scripts").join("ocr_pipeline.py");
-    if !script.exists() {
-        return Err(AppError::Internal {
-            message: format!("OCR script not found: {}", script.to_string_lossy()),
-            code: 9999,
-        });
-    }
     let config = project_root.join("config").join("ocr_config.json");
     if !config.exists() {
         return Err(AppError::Internal {
@@ -114,18 +107,37 @@ pub fn run_ocr_pipeline(project_root: &Path, input: &Path) -> Result<OcrResult, 
         });
     }
 
-    let python = find_python();
-    let output = Command::new(&python)
-        .arg(&script)
+    // Prefer bundled standalone EXE (no Python required on target machine).
+    // Falls back to `python ocr_pipeline.py` for development.
+    let bundled_exe = project_root.join("ocr_pipeline").join("ocr_pipeline.exe");
+    let (program, pre_args): (String, Vec<String>) = if bundled_exe.exists() {
+        (bundled_exe.to_string_lossy().to_string(), vec![])
+    } else {
+        let script = project_root.join("scripts").join("ocr_pipeline.py");
+        if !script.exists() {
+            return Err(AppError::Internal {
+                message: format!(
+                    "OCR engine not found. Expected bundled EXE at: {}\nor script at: {}",
+                    bundled_exe.to_string_lossy(),
+                    script.to_string_lossy()
+                ),
+                code: 9999,
+            });
+        }
+        (find_python(), vec![script.to_string_lossy().to_string()])
+    };
+
+    let mut cmd = Command::new(&program);
+    cmd.args(&pre_args)
         .arg("--input")
         .arg(input)
         .arg("--config")
         .arg(&config)
         .arg("--project-root")
-        .arg(project_root)
-        .output()
-        .map_err(|e| AppError::OcrFailed {
-            reason: format!("Failed to launch python ({}): {}", python, e),
+        .arg(project_root);
+
+    let output = cmd.output().map_err(|e| AppError::OcrFailed {
+            reason: format!("Failed to launch OCR engine ({}): {}", program, e),
             code: 2002,
         })?;
 
