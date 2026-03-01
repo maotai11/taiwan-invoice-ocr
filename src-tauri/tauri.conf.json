@@ -35,9 +35,9 @@
     ],
     "resources": {
       "../scripts/ocr_pipeline.py": "scripts/ocr_pipeline.py",
-      "../scripts/invoice_pipeline.py": "scripts/invoice_pipeline.py",
-      "../scripts/requirements-ocr.txt": "scripts/requirements-ocr.txt",
+      "../scripts/invoice_classifier.py": "scripts/invoice_classifier.py",
       "../config/ocr_config.json": "config/ocr_config.json",
+      "../config/keyword_weights.json": "config/keyword_weights.json",
       "../ocr_models/det": "ocr_models/det",
       "../ocr_models/rec": "ocr_models/rec",
       "../ocr_models/cls": "ocr_models/cls"

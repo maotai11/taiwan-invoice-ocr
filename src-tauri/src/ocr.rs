@@ -62,21 +62,23 @@ pub struct OcrResult {
 }
 
 /// Resolve the project/resource root directory at runtime.
-/// In production (Tauri installed app), scripts/ and config/ sit next to the exe.
-/// In development (cargo run), fall back to CARGO_MANIFEST_DIR parent.
+///
+/// Detection priority (first match wins):
+///   1. exe_dir contains config/ocr_config.json   -> portable / installed build
+///   2. exe_dir/../.. contains config/ocr_config.json -> cargo dev (target/debug|release)
+///   3. CARGO_MANIFEST_DIR parent                  -> compile-time fallback
 pub fn runtime_resource_root() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            // Production: scripts/ is bundled next to the exe
-            if exe_dir.join("scripts").exists() {
+            // Portable / installed: config/ is next to the exe
+            if exe_dir.join("config").join("ocr_config.json").exists() {
                 return exe_dir.to_path_buf();
             }
-            // Tauri dev: exe is at target/debug/ or target/release/
-            // Go up to find the project root (where scripts/ lives)
+            // Cargo dev: exe lives at target/debug or target/release
+            // Walk up two levels -> project root
             if let Some(target_dir) = exe_dir.parent() {
-                // target/debug -> target -> project root
                 if let Some(project_dir) = target_dir.parent() {
-                    if project_dir.join("scripts").exists() {
+                    if project_dir.join("config").join("ocr_config.json").exists() {
                         return project_dir.to_path_buf();
                     }
                 }
