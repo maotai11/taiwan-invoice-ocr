@@ -505,13 +505,38 @@ def _extract_amounts(texts: list[str], full: str) -> tuple[str | None, str | Non
 # Evidence builder
 # ---------------------------------------------------------------------------
 
+def _find_evidence_line(value_text: str, lines: list[OcrLine]) -> "OcrLine | None":
+    """
+    Match priority (highest to lowest):
+      1. Exact full-line match
+      2. Non-digit boundary match — prevents "45" matching inside "12345678"
+      3. Substring fallback (original behaviour, last resort)
+    For numeric values the boundary pattern is (?<!\\d)value(?!\\d).
+    For text values we fall straight through to substring.
+    """
+    # 1. Exact match
+    for line in lines:
+        if line.text == value_text:
+            return line
+    # 2. Boundary match (most useful for short numbers)
+    pat = r"(?<!\d)" + re.escape(value_text) + r"(?!\d)"
+    for line in lines:
+        if re.search(pat, line.text):
+            return line
+    # 3. Substring fallback
+    for line in lines:
+        if value_text in line.text:
+            return line
+    return None
+
+
 def build_evidence(fields: dict[str, Any], lines: list[OcrLine]) -> dict[str, Any]:
     evidence = {}
     for key, value in fields.items():
         if value in (None, "", False):
             continue
         value_text = str(value)
-        hit = next((line for line in lines if value_text in line.text), None)
+        hit = _find_evidence_line(value_text, lines)
         if hit is None:
             continue
         evidence[key] = {
