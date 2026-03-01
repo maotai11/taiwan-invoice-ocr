@@ -94,15 +94,25 @@ def local_model_dirs() -> tuple[str, str, str]:
     return str(det), str(rec), str(cls)
 
 
+_paddle_ocr_instance = None
+
+
+def get_paddle_ocr():
+    global _paddle_ocr_instance
+    if _paddle_ocr_instance is None:
+        from paddleocr import PaddleOCR
+        det, rec, cls = local_model_dirs()
+        _paddle_ocr_instance = PaddleOCR(
+            text_detection_model_dir=det,
+            text_recognition_model_dir=rec,
+            textline_orientation_model_dir=cls,
+            use_textline_orientation=True,
+        )
+    return _paddle_ocr_instance
+
+
 def run_paddle_ocr(image_path: str) -> list[OcrLine]:
-    from paddleocr import PaddleOCR
-    det, rec, cls = local_model_dirs()
-    ocr = PaddleOCR(
-        text_detection_model_dir=det,
-        text_recognition_model_dir=rec,
-        textline_orientation_model_dir=cls,
-        use_textline_orientation=True,
-    )
+    ocr = get_paddle_ocr()
     raw = ocr.predict(image_path)
     lines: list[OcrLine] = []
     if not raw:
@@ -139,6 +149,96 @@ def load_ubn_memory(project_root: Path) -> dict[str, str]:
         return result
     except Exception:
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Template Region Learning
+# ---------------------------------------------------------------------------
+
+def load_templates(project_root: Path) -> dict:
+    """Load data/templates.json. Returns empty dict if missing or unreadable."""
+    path = project_root / "data" / "templates.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        sys.stderr.write(f"[warn] Failed to load templates.json: {e}\n")
+        return {}
+
+
+def parse_template_field(field: str, text: str) -> Any:
+    """Coerce raw OCR text from a cropped region into the typed field value."""
+    if not text:
+        return None
+    if field in ("seller_ubn", "buyer_ubn"):
+        digits = re.sub(r"\D", "", text)
+        return digits if validate_ubn(digits) else None
+    elif field in ("net_amount", "tax", "total"):
+        return normalise_amount(text)
+    elif field == "inv_no":
+        m = re.search(r"([A-Z]{2})\s*(\d{8})", text.upper())
+        return f"{m.group(1)}{m.group(2)}" if m else None
+    elif field == "inv_date":
+        return parse_date(text)
+    else:
+        return text.strip() or None
+
+
+def extract_fields_from_template(
+    image_path: str,
+    regions: dict[str, dict],
+) -> dict[str, Any]:
+    """
+    For each region in the template, crop the image and run PaddleOCR.
+    Returns {field: value} only for fields where OCR produced a usable result.
+    """
+    import tempfile
+    try:
+        from PIL import Image
+    except ImportError:
+        sys.stderr.write("[warn] PIL not available; skipping template region OCR\n")
+        return {}
+
+    try:
+        img = Image.open(image_path).convert("RGB")
+    except Exception as e:
+        sys.stderr.write(f"[warn] Cannot open image for template crop: {e}\n")
+        return {}
+
+    W, H = img.size
+    result: dict[str, Any] = {}
+
+    for field, region in regions.items():
+        x = int(region["x"] * W)
+        y = int(region["y"] * H)
+        w = max(int(region["w"] * W), 4)
+        h = max(int(region["h"] * H), 4)
+        crop = img.crop((x, y, x + w, y + h))
+
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
+        try:
+            import os as _os
+            _os.close(tmp_fd)
+            crop.save(tmp_path)
+            lines = run_paddle_ocr(tmp_path)
+            if lines:
+                raw_text = " ".join(l.text for l in lines).strip()
+                value = parse_template_field(field, raw_text)
+                if value is not None:
+                    result[field] = value
+                    sys.stderr.write(f"[template] {field}: {value!r}  (from crop {x},{y} {w}x{h})\n")
+        except Exception as e:
+            sys.stderr.write(f"[warn] Template crop OCR failed for {field}: {e}\n")
+        finally:
+            try:
+                import os as _os
+                _os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +563,19 @@ def main() -> int:
 
     # 3. Extract fields (PaddleOCR text — reliable for numbers/UBN/inv_no)
     paddle_fields = extract_fields(lines)
+
+    # 3b. Template region learning — precision crop for known invoice types
+    templates = load_templates(project_root)
+    if invoice_type in templates:
+        regions = templates[invoice_type].get("regions", {})
+        if regions:
+            template_fields = extract_fields_from_template(str(image_path), regions)
+            hit_count = len(template_fields)
+            if hit_count:
+                sys.stderr.write(
+                    f"[info] Template '{invoice_type}': {hit_count}/{len(regions)} fields overridden\n"
+                )
+                paddle_fields.update(template_fields)
 
     # 4. UBN memory — fill known company names instantly
     memory = load_ubn_memory(project_root)
