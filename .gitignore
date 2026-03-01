@@ -1,0 +1,35 @@
+# Node
+node_modules
+dist
+dist-ssr
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Rust build
+src-tauri/target/
+src-tauri/gen/
+
+# Large model files (distribute separately)
+models/
+ocr_models/
+engine/
+
+# User data & test outputs
+data/
+scripts/__pycache__/
+scripts/result*.json
+scripts/sample_invoice.*
+
+# Built installers (use GitHub Releases)
+*.exe
+*.msi
