@@ -1,6 +1,7 @@
 mod commands;
 mod error;
 mod export;
+mod memory;
 mod models;
 mod ocr;
 mod state;
@@ -23,7 +24,9 @@ pub fn run() {
             commands::rerun_extraction,
             commands::export_excel_command,
             commands::run_ocr_for_row,
-            commands::save_memory_entry,
+            memory::save_memory_entry,
+            memory::lookup_memory_entry,
+            memory::fuzzy_search_memory,
             template::save_template_region,
             template::get_templates,
             template::delete_template_region

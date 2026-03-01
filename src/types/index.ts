@@ -43,3 +43,17 @@ export interface InvoiceTemplate {
 }
 
 export type TemplateMap = Record<string, InvoiceTemplate>;
+
+export interface MemoryEntry {
+  name: string;
+  invoice_type?: string;
+  use_count: number;
+  last_seen: string;
+  aliases: string[];
+}
+
+export interface FuzzyResult {
+  ubn: string;
+  entry: MemoryEntry;
+  score: number;
+}

@@ -108,12 +108,20 @@ def run_paddle_ocr(image_path: str) -> list[OcrLine]:
 # ---------------------------------------------------------------------------
 
 def load_ubn_memory(project_root: Path) -> dict[str, str]:
+    """Returns ubn -> name mapping, supporting both v1 (str) and v2 (dict) formats."""
     path = project_root / "data" / "ubn_memory.json"
     if not path.exists():
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            raw = json.load(f)
+        result = {}
+        for ubn, val in raw.items():
+            if isinstance(val, str):
+                result[ubn] = val          # v1
+            elif isinstance(val, dict):
+                result[ubn] = val.get("name", "")  # v2
+        return result
     except Exception:
         return {}
 

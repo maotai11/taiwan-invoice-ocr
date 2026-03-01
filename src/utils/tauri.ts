@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ImportResult, RegionRect, RowRecordSummary, TemplateMap } from "../types";
+import type { FuzzyResult, ImportResult, MemoryEntry, RegionRect, RowRecordSummary, TemplateMap } from "../types";
 
 export async function importFiles(paths: string[]): Promise<ImportResult> {
   return invoke<ImportResult>("import_files", { paths });
@@ -38,8 +38,16 @@ export async function exportExcel(outputPath: string, includeStatuses: string[])
   });
 }
 
-export async function saveMemoryEntry(ubn: string, name: string): Promise<void> {
-  return invoke("save_memory_entry", { ubn, name });
+export async function saveMemoryEntry(ubn: string, name: string, invoiceType?: string): Promise<void> {
+  return invoke("save_memory_entry", { ubn, name, invoiceType: invoiceType ?? null });
+}
+
+export async function lookupMemoryEntry(ubn: string): Promise<MemoryEntry | null> {
+  return invoke<MemoryEntry | null>("lookup_memory_entry", { ubn });
+}
+
+export async function fuzzySearchMemory(query: string): Promise<FuzzyResult[]> {
+  return invoke<FuzzyResult[]>("fuzzy_search_memory", { query });
 }
 
 export async function saveTemplateRegion(

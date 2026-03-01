@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::collections::HashMap;
 
 use chrono::Utc;
 use tauri::State;
@@ -303,34 +302,3 @@ fn set_field_value(row: &mut RowRecord, field: &str, value: &str) -> Option<Stri
     }
 }
 
-/// Save a UBN → company name mapping to data/ubn_memory.json.
-/// Called from the frontend when the user manually corrects a company name.
-#[tauri::command]
-pub async fn save_memory_entry(ubn: String, name: String) -> Result<(), AppError> {
-    if ubn.is_empty() || name.is_empty() {
-        return Ok(());
-    }
-    let memory_path = runtime_resource_root().join("data").join("ubn_memory.json");
-    if let Some(parent) = memory_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| AppError::Internal {
-            message: format!("Cannot create data dir: {e}"),
-            code: 9001,
-        })?;
-    }
-    let mut memory: HashMap<String, String> = if memory_path.exists() {
-        let raw = std::fs::read_to_string(&memory_path).unwrap_or_default();
-        serde_json::from_str(&raw).unwrap_or_default()
-    } else {
-        HashMap::new()
-    };
-    memory.insert(ubn, name);
-    let json = serde_json::to_string_pretty(&memory).map_err(|e| AppError::Internal {
-        message: e.to_string(),
-        code: 9001,
-    })?;
-    std::fs::write(&memory_path, json).map_err(|e| AppError::Internal {
-        message: format!("Cannot write memory: {e}"),
-        code: 9001,
-    })?;
-    Ok(())
-}
