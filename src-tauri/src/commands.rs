@@ -88,6 +88,10 @@ pub async fn import_files(state: State<'_, AppState>, paths: Vec<PathBuf>) -> Re
                 row.evidence = ocr.evidence;
                 row.match_score = ocr.match_score;
                 row.cross_validations = ocr.cross_validations;
+                if let Some(preview) = ocr.preview_image_path {
+                    row.image_path = preview.clone();
+                    row.thumb_path = preview;
+                }
                 if ocr.review {
                     row.status = RowStatus::Review;
                 }
@@ -148,6 +152,10 @@ pub async fn run_ocr_for_row(state: State<'_, AppState>, row_id: Uuid) -> Result
     let project_root = runtime_resource_root();
     row.processing_state = ProcessingState::OcrRunning;
     let ocr = run_ocr_pipeline(&project_root, &row.image_path)?;
+    if let Some(preview) = ocr.preview_image_path {
+        row.image_path = preview.clone();
+        row.thumb_path = preview;
+    }
     row.fields = ocr.fields;
     row.evidence = ocr.evidence;
     row.match_score = ocr.match_score;
@@ -310,4 +318,3 @@ fn set_field_value(row: &mut RowRecord, field: &str, value: &str) -> Option<Stri
         _ => None,
     }
 }
-

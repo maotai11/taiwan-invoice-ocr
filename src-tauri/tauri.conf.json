@@ -36,6 +36,7 @@
     "resources": {
       "../scripts/ocr_pipeline.py": "scripts/ocr_pipeline.py",
       "../scripts/invoice_classifier.py": "scripts/invoice_classifier.py",
+      "../ocr_pipeline": "ocr_pipeline",
       "../config/ocr_config.json": "config/ocr_config.json",
       "../config/keyword_weights.json": "config/keyword_weights.json",
       "../ocr_models/det": "ocr_models/det",

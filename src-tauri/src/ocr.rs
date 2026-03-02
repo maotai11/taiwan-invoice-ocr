@@ -24,6 +24,8 @@ struct PythonOcrOutput {
     review: bool,
     #[serde(default)]
     cross_validations: Vec<PythonCrossValidation>,
+    #[serde(default)]
+    preview_image_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +61,7 @@ pub struct OcrResult {
     pub match_score: f32,
     pub review: bool,
     pub cross_validations: Vec<CrossValidation>,
+    pub preview_image_path: Option<PathBuf>,
 }
 
 /// Resolve the project/resource root directory at runtime.
@@ -70,9 +73,16 @@ pub struct OcrResult {
 pub fn runtime_resource_root() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
-            // Portable / installed: config/ is next to the exe
-            if exe_dir.join("config").join("ocr_config.json").exists() {
-                return exe_dir.to_path_buf();
+            // Candidate roots for portable and installer layouts.
+            let candidates = [
+                exe_dir.to_path_buf(),
+                exe_dir.join("resources"),
+                exe_dir.join("Resources"),
+            ];
+            for candidate in candidates {
+                if candidate.join("config").join("ocr_config.json").exists() {
+                    return candidate;
+                }
             }
             // Cargo dev: exe lives at target/debug or target/release
             // Walk up two levels -> project root
@@ -206,6 +216,7 @@ pub fn run_ocr_pipeline(project_root: &Path, input: &Path) -> Result<OcrResult, 
                 qwen_val: c.qwen_val,
             })
             .collect(),
+        preview_image_path: parsed.preview_image_path.map(PathBuf::from),
     })
 }
 

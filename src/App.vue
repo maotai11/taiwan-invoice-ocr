@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   deleteTemplateRegion,
@@ -62,6 +63,16 @@ const filteredRows = computed(() => {
   if (statusFilter.value === "all") return rows.value;
   return rows.value.filter((r) => r.status === statusFilter.value);
 });
+
+function toAssetUrl(path: string): string {
+  if (!path) return "";
+  if (/^(https?:|asset:|tauri:|blob:|data:)/i.test(path)) return path;
+  return convertFileSrc(path);
+}
+
+const selectedRowAssetUrl = computed(() =>
+  selectedRow.value?.thumb_url ? toAssetUrl(selectedRow.value.thumb_url) : "",
+);
 
 // Field colors (same order as RegionSelector FIELDS)
 const FIELD_KEYS = ["inv_no", "inv_date", "seller_ubn", "seller_name", "buyer_ubn", "buyer_name", "net_amount", "tax", "total"];
@@ -367,8 +378,8 @@ function statusClass(status: string): string {
         </div>
 
         <!-- Image with overlay — click to open lightbox -->
-        <div v-if="selectedRow" class="image-wrap" @click="lightboxSrc = selectedRow!.thumb_url">
-          <img :src="selectedRow.thumb_url" alt="thumb" class="preview-image" />
+        <div v-if="selectedRow" class="image-wrap" @click="lightboxSrc = selectedRowAssetUrl">
+          <img :src="selectedRowAssetUrl" alt="thumb" class="preview-image" />
           <div
             v-for="(rect, fieldKey) in currentTemplate?.regions ?? {}"
             :key="fieldKey"
@@ -432,7 +443,7 @@ function statusClass(status: string): string {
     <!-- ------------------------------------------------------------------ Region Selector -->
     <RegionSelector
       v-if="showRegionSelector && selectedRow"
-      :image-src="selectedRow.thumb_url"
+      :image-src="selectedRowAssetUrl"
       :invoice-type="selectedInvoiceType"
       :existing-template="currentTemplate"
       @save="onRegionSave"

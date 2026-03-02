@@ -20,27 +20,7 @@ if errorlevel 1 (
 )
 
 echo [2/3] Building OCR engine - this may take 5-15 minutes...
-python -m PyInstaller ^
-    --onedir ^
-    --name ocr_pipeline ^
-    --distpath "%PROJECT_ROOT%\ocr_pipeline_dist" ^
-    --workpath "%PROJECT_ROOT%\ocr_pipeline_build_tmp" ^
-    --noconfirm ^
-    --collect-all paddleocr ^
-    --collect-all paddle ^
-    --collect-submodules paddle ^
-    --collect-all llama_cpp ^
-    --hidden-import llama_cpp.llama ^
-    --hidden-import llama_cpp.llama_chat_format ^
-    --hidden-import llama_cpp.llama_types ^
-    --hidden-import invoice_classifier ^
-    --hidden-import PIL ^
-    --hidden-import PIL.Image ^
-    --hidden-import PIL.ImageOps ^
-    --hidden-import numpy ^
-    --hidden-import cv2 ^
-    --paths "%~dp0" ^
-    ocr_pipeline.py
+python -m PyInstaller --distpath "%PROJECT_ROOT%\ocr_pipeline_dist" --workpath "%PROJECT_ROOT%\ocr_pipeline_build_tmp" --noconfirm "%~dp0ocr_pipeline.spec"
 
 if errorlevel 1 (
     echo ERROR: PyInstaller failed. See output above.

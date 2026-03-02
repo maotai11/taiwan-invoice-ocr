@@ -13,6 +13,7 @@ Pipeline:
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -45,6 +46,51 @@ def to_bbox(points: list[list[float]]) -> list[float]:
 def resolve_path(raw: str, root: Path) -> Path:
     p = Path(raw)
     return p if p.is_absolute() else root / p
+
+
+def ensure_preview_dir(project_root: Path) -> Path:
+    d = project_root / "data" / "previews"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def render_pdf_first_page(pdf_path: Path, project_root: Path) -> Path:
+    """
+    Render the first page of a PDF to PNG for OCR and preview.
+    Uses pypdfium2 so the portable bundle works without external poppler/ghostscript.
+    """
+    try:
+        import pypdfium2 as pdfium
+    except Exception as e:
+        raise RuntimeError(f"PDF rendering dependency missing (pypdfium2): {e}") from e
+
+    preview_dir = ensure_preview_dir(project_root)
+    stamp = f"{pdf_path.resolve()}|{pdf_path.stat().st_mtime_ns}"
+    digest = hashlib.sha1(stamp.encode("utf-8")).hexdigest()[:16]
+    out_path = preview_dir / f"{pdf_path.stem}_{digest}.png"
+    if out_path.exists():
+        return out_path
+
+    doc = pdfium.PdfDocument(str(pdf_path))
+    if len(doc) == 0:
+        raise RuntimeError(f"PDF has no pages: {pdf_path}")
+    page = doc[0]
+    try:
+        pil_image = page.render(scale=2.0).to_pil()
+        pil_image.save(str(out_path), format="PNG")
+    finally:
+        close_page = getattr(page, "close", None)
+        if callable(close_page):
+            close_page()
+        doc.close()
+    return out_path
+
+
+def prepare_input_image(input_path: Path, project_root: Path) -> Path:
+    ext = input_path.suffix.lower()
+    if ext == ".pdf":
+        return render_pdf_first_page(input_path, project_root)
+    return input_path
 
 
 def normalise_amount(v: str | None) -> str | None:
@@ -560,9 +606,9 @@ def main() -> int:
     parser.add_argument("--project-root", default=None)
     args = parser.parse_args()
 
-    image_path = Path(args.input)
-    if not image_path.exists():
-        raise FileNotFoundError(f"Input not found: {image_path}")
+    input_path = Path(args.input)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input not found: {input_path}")
 
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = json.load(f)
@@ -571,11 +617,13 @@ def main() -> int:
         Path(args.project_root).resolve() if args.project_root
         else Path(__file__).resolve().parent.parent
     )
+    image_path = prepare_input_image(input_path, project_root)
+    sys.stderr.write(f"[info] OCR input resolved to: {image_path}\n")
 
     # 1. PaddleOCR
     lines = run_paddle_ocr(str(image_path))
     if not lines:
-        raise RuntimeError("PaddleOCR produced no text lines.")
+        sys.stderr.write("[warn] PaddleOCR produced no text lines.\n")
     full_text = "\n".join(l.text for l in lines)
 
     # 2. Classify invoice type
@@ -652,6 +700,7 @@ def main() -> int:
         "match_score": round(match_score, 4),
         "review": review,
         "cross_validations": cross_validations,
+        "preview_image_path": str(image_path),
     }, ensure_ascii=False)
     sys.stdout.buffer.write(out.encode("utf-8"))
     return 0
